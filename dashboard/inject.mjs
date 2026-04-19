@@ -218,6 +218,10 @@ export async function fetchAllNews() {
     ['https://rsshub.rssforever.com/jin10/news', '金十数据'],
     // China — 第一财经
     ['https://rsshub.rssforever.com/yicai/news', '第一财经'],
+    // China — 网易国内 (政策/社会/经济)
+    ['https://rsshub.rssforever.com/163/news/china', '网易国内'],
+    // China — 澎湃新闻 (政策优先)
+    ['https://rsshub.rssforever.com/thepaper/lists/2', '澎湃新闻'],
     // Taiwan — iThome
     ['https://www.ithome.com.tw/rss', 'iThome'],
     // China — 人民网时政 (人民网RSS已停更，换用BBC中文)
@@ -738,10 +742,18 @@ function buildNewsFeed(rssNews, gdeltData, tgUrgent, tgTop, cnnewsItems = []) {
   const feed = [];
 
   // CN priority sources (Chinese + Taiwan RSS + THS news)
-  const CN_SOURCES = ['36氪', '华尔街见闻', '金十数据', '第一财经', 'iThome', '同花顺', 'THS-CN-News'];
+  const CN_SOURCES = ['36氪', '华尔街见闻', '金十数据', '第一财经', 'iThome', '同花顺', 'THS-CN-News', '网易国内', '澎湃新闻'];
 
-  // RSS news
+  // Quality filter: skip vague/empty items
+  const isQualityItem = (n) => {
+    const t = (n.title || n.headline || '').trim();
+    if (!t || t === '视频' || t.length < 8) return false;
+    return true;
+  };
+
+  // RSS news — skip low-quality items (e.g. 金十数据 "视频" posts)
   for (const n of rssNews) {
+    if (!isQualityItem(n)) continue;
     feed.push({
       headline: n.title, source: n.source, type: 'rss',
       timestamp: n.date, region: n.region, urgent: false, url: n.url,
@@ -781,8 +793,11 @@ function buildNewsFeed(rssNews, gdeltData, tgUrgent, tgTop, cnnewsItems = []) {
     });
   }
 
-  // THS China News (同花顺快讯)
+  // THS China News (同花顺快讯) — quality filter
   for (const n of cnnewsItems) {
+    const t = (n.headline || '').trim();
+    if (!t || t === '视频' || t.length < 8) continue;
+    if (!n.url) continue;
     feed.push({
       headline: n.headline, source: n.source, type: n.type || 'ths',
       timestamp: n.timestamp, region: n.region || 'CN', urgent: n.urgent || false, url: n.url,
@@ -814,8 +829,12 @@ function buildNewsFeed(rssNews, gdeltData, tgUrgent, tgTop, cnnewsItems = []) {
 
   const cnItems = recent.filter(item => item.isCN);
   const otherItems = recent.filter(item => !item.isCN);
-  cnItems.slice(0, 23).forEach(pushUnique);  // CN: max 23
-  otherItems.slice(0, 7).forEach(pushUnique);  // EN: max 7
+  // Reserve slots for THS-CN-News (type=ths) — they are real-time Chinese market/OSINT
+  const thsItems = cnItems.filter(item => item.type === 'ths');
+  const rssCNItems = cnItems.filter(item => item.type !== 'ths');
+  thsItems.slice(0, 8).forEach(pushUnique);     // THS-CN-News: max 8
+  rssCNItems.slice(0, 15).forEach(pushUnique); // CN RSS: max 15
+  otherItems.slice(0, 7).forEach(pushUnique);   // EN/other: max 7
 
   return selected.slice(0, 30);
 }

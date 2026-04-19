@@ -1,17 +1,6 @@
 {
   "version": 2,
-  "builds": [
-    {
-      "src": "server.mjs",
-      "use": "@vercel/node",
-      "config": {
-        "runtime": "nodejs22.x",
-        "maxDuration": 60,
-        "memory": 1024
-      }
-    }
-  ],
-  "routes": [
-    { "src": "/(.*)", "dest": "/server.mjs" }
+  "rewrites": [
+    { "source": "/(.*)", "destination": "/dashboard/public/$1" }
   ]
 }

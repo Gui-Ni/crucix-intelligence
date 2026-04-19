@@ -2,11 +2,12 @@
 // Crucix Intelligence Engine — Dev Server
 // Serves the Jarvis dashboard, runs sweep cycle, pushes live updates via SSE
 
+import 'dotenv/config';
 import express from 'express';
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'fs';
 import { dirname, join } from 'path';
 import { fileURLToPath } from 'url';
-import { exec } from 'child_process';
+import { exec, execSync } from 'child_process';
 import config from './crucix.config.mjs';
 import { getLocale, currentLanguage, getSupportedLocales } from './lib/i18n.mjs';
 import { fullBriefing } from './apis/briefing.mjs';
@@ -42,6 +43,49 @@ const memory = new MemoryManager(RUNS_DIR);
 const llmProvider = createLLMProvider(config.llm);
 const telegramAlerter = new TelegramAlerter(config.telegram);
 const discordAlerter = new DiscordAlerter(config.discord || {});
+
+// === Vercel Relay ===
+const VERCEL_RELAY_URL = process.env.VERCEL_RELAY_URL || null;
+
+async function pushToVercel(data) {
+  if (!VERCEL_RELAY_URL) return;
+  try {
+    const url = VERCEL_RELAY_URL.replace(/\/$/, '') + '/api/push-data';
+    await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    });
+    console.log(`[Crucix] Pushed to Vercel: ${VERCEL_RELAY_URL}`);
+  } catch (e) {
+    console.warn('[Crucix] Vercel push failed:', e.message);
+  }
+}
+
+// === Auto-deploy: update jarvis.html inline data + push to GitHub ===
+const AUTO_DEPLOY = process.env.AUTO_DEPLOY === 'true';
+
+async function updateAndPushHtml(data) {
+  if (!AUTO_DEPLOY) return;
+  try {
+    const htmlPath = join(ROOT, 'dashboard/public/jarvis.html');
+    const html = readFileSync(htmlPath, 'utf8');
+    const json = JSON.stringify(data);
+    const updated = html.replace(/^(let|const) D = .*;$/m, () => 'let D = ' + json + ';');
+    writeFileSync(htmlPath, updated);
+
+    execSync('git add dashboard/public/jarvis.html', { cwd: ROOT, stdio: 'pipe' });
+    const { stdout } = execSync('git diff --cached --stat', { cwd: ROOT, encoding: 'utf8' });
+    if (!stdout || !stdout.trim()) { console.log('[Crucix] No jarvis.html changes to push'); return; }
+
+    const timestamp = new Date().toISOString().slice(0, 19).replace('T', ' ');
+    execSync(`git commit -m "chore: auto-update dashboard data ${timestamp}"`, { cwd: ROOT, stdio: 'ignore' });
+    execSync('git push origin master', { cwd: ROOT, stdio: 'ignore' });
+    console.log('[Crucix] jarvis.html pushed to GitHub — Vercel will auto-deploy');
+  } catch (e) {
+    console.warn('[Crucix] GitHub push failed:', e.message);
+  }
+}
 
 if (llmProvider) console.log(`[Crucix] LLM enabled: ${llmProvider.name} (${llmProvider.model})`);
 if (telegramAlerter.isConfigured) {
@@ -234,12 +278,18 @@ if (discordAlerter.isConfigured) {
 
 // === Express Server ===
 const app = express();
+app.use(express.json({ limit: '50mb' }));
 app.use(express.static(join(ROOT, 'dashboard/public')));
 
 // Serve loading page until first sweep completes, then the dashboard with injected locale
 app.get('/', (req, res) => {
   if (!currentData) {
-    res.sendFile(join(ROOT, 'dashboard/public/loading.html'));
+    const loadingPath = join(ROOT, 'dashboard/public/loading.html');
+    if (existsSync(loadingPath)) {
+      res.sendFile(loadingPath);
+    } else {
+      res.status(503).type('html').send('<html><body><h1>CRUCIX is starting up...</h1><p>Refresh in a few seconds.</p></body></html>');
+    }
   } else {
     const htmlPath = join(ROOT, 'dashboard/public/jarvis.html');
     let html = readFileSync(htmlPath, 'utf-8');
@@ -253,10 +303,26 @@ app.get('/', (req, res) => {
   }
 });
 
+// Global error handler — prevents unhandled errors from showing OS popups
+app.use((err, req, res, next) => {
+  console.error('[Crucix] Request error:', err.message);
+  if (!res.headersSent) {
+    res.status(err.status || 500).type('txt').send(err.message || 'Internal error');
+  }
+});
+
 // API: current data
 app.get('/api/data', (req, res) => {
-  if (!currentData) return res.status(503).json({ error: 'No data yet — first sweep in progress' });
-  res.json(currentData);
+  // Always read from /tmp/latest.json (written by local server after each sweep)
+  // On cold Vercel start /tmp/latest.json may not exist yet — return 503 so
+  // frontend keeps its inline data rather than overwriting with undefined
+  try {
+    if (existsSync('/tmp/latest.json')) {
+      const data = JSON.parse(readFileSync('/tmp/latest.json', 'utf8'));
+      return res.json(data);
+    }
+  } catch (_) {}
+  res.status(503).json({ error: 'Data not ready yet — local server is still warming up' });
 });
 
 // API: health check
@@ -278,6 +344,31 @@ app.get('/api/health', (req, res) => {
     refreshIntervalMinutes: config.refreshIntervalMinutes,
     language: currentLanguage,
   });
+});
+
+// API: trigger sweep (used by Vercel Cron)
+app.post('/api/sweep', (req, res) => {
+  if (sweepInProgress) {
+    return res.status(409).json({ error: 'Sweep already in progress' });
+  }
+  runSweepCycle().catch(err => console.error('[Cron] Sweep failed:', err.message));
+  res.json({ status: 'triggered', time: new Date().toISOString() });
+});
+
+// API: receive sweep data from local server (local PM2 -> Vercel relay)
+app.post('/api/push-data', (req, res) => {
+  try {
+    const data = req.body;
+    if (!data || typeof data !== 'object') {
+      return res.status(400).json({ error: 'Invalid data' });
+    }
+    // Persist to Vercel's tmp directory (survives across invocations within a warm instance)
+    const tmpPath = '/tmp/latest.json';
+    writeFileSync(tmpPath, JSON.stringify(data));
+    res.json({ status: 'ok', time: new Date().toISOString() });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
 });
 
 // API: available locales
@@ -384,6 +475,12 @@ async function runSweepCycle() {
     // 6. Push to all connected browsers
     broadcast({ type: 'update', data: currentData });
 
+    // 7. Push to Vercel relay (if configured)
+    pushToVercel(synthesized).catch(err => console.warn('[Crucix] Vercel push failed:', err.message));
+
+    // 8. Update jarvis.html and push to GitHub (triggers Vercel redeploy)
+    updateAndPushHtml(synthesized).catch(err => console.warn('[Crucix] GitHub push failed:', err.message));
+
     console.log(`[Crucix] Sweep complete — ${currentData.meta.sourcesOk}/${currentData.meta.sourcesQueried} sources OK`);
     console.log(`[Crucix] ${currentData.ideas.length} ideas (${synthesized.ideasSource}) | ${currentData.news.length} news | ${currentData.newsFeed.length} feed items`);
     if (delta?.summary) console.log(`[Crucix] Delta: ${delta.summary.totalChanges} changes, ${delta.summary.criticalChanges} critical, direction: ${delta.summary.direction}`);
@@ -472,7 +569,10 @@ process.on('uncaughtException', (err) => {
   console.error('[Crucix] Uncaught exception:', err?.stack || err?.message || err);
 });
 
-start().catch(err => {
-  console.error('[Crucix] FATAL — Server failed to start:', err?.stack || err?.message || err);
-  process.exit(1);
-});
+// Only start the local server when NOT running on Vercel serverless
+if (process.env.VERCEL !== '1') {
+  start().catch(err => {
+    console.error('[Crucix] FATAL — Server failed to start:', err?.stack || err?.message || err);
+    process.exit(1);
+  });
+}

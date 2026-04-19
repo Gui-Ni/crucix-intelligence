@@ -3,11 +3,7 @@
   "builds": [
     {
       "src": "server.mjs",
-      "use": "@vercel/node",
-      "config": { "runtime": "nodejs22.x", "maxDuration": 60, "memory": 1024 }
+      "use": "@vercel/node"
     }
-  ],
-  "routes": [
-    { "src": "/(.*)", "dest": "/server.mjs" }
   ]
 }

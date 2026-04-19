@@ -3,7 +3,6 @@
   "rewrites": [
     { "source": "/", "destination": "/dashboard/public/jarvis.html" },
     { "source": "/jarvis.html", "destination": "/dashboard/public/jarvis.html" },
-    { "source": "/loading.html", "destination": "/dashboard/public/loading.html" },
-    { "source": "/:path(\\.(js|css|png|jpg|jpeg|gif|ico|svg|woff|woff2|ttf|eot)$)", "destination": "/dashboard/public/:path" }
+    { "source": "/loading.html", "destination": "/dashboard/public/loading.html" }
   ]
 }

@@ -1,200 +1,75 @@
-// UN Comtrade — Global Trade Data
-// Public preview endpoint requires no key. Full API needs free registration.
-// Tracks commodity trade flows between nations: crude oil, gas, gold, semiconductors, arms.
-// Reporter codes: 842 (US), 156 (China), 276 (Germany), 392 (Japan), 826 (UK), 643 (Russia), 356 (India)
+// UN Comtrade — 贸易数据轻量版
+// 使用 UN Comtrade 公开预览 API，数据量小，无需注册
+// https://comtradeapi.un.org/public/v1/preview
 
-import { safeFetch, daysAgo, today } from '../utils/fetch.mjs';
+import { safeFetch, daysAgo } from '../utils/fetch.mjs';
 
-const BASE = 'https://comtradeapi.un.org/public/v1';
+const BASE = 'https://comtradeapi.un.org/public/v1/preview';
 
-// Strategic commodity codes (HS classification)
-const STRATEGIC_COMMODITIES = {
-  '2709': 'Crude Petroleum',
-  '2711': 'Natural Gas (LNG & Pipeline)',
-  '7108': 'Gold (unwrought/semi-manufactured)',
-  '8542': 'Semiconductors (Electronic Integrated Circuits)',
-  '93':   'Arms & Ammunition',
-  '2844': 'Radioactive Elements (Nuclear)',
-  '8471': 'Computers & Processing Units',
-  '2701': 'Coal',
-  '7601': 'Aluminium (unwrought)',
-  '2612': 'Uranium & Thorium Ores',
-};
-
-// Key reporter/partner country codes
-const COUNTRIES = {
-  842: 'United States',
-  156: 'China',
-  276: 'Germany',
-  392: 'Japan',
-  826: 'United Kingdom',
-  643: 'Russia',
-  356: 'India',
-  410: 'South Korea',
-  158: 'Taiwan',
-  380: 'Italy',
-};
-
-// Get trade data for a specific reporter, commodity, and period
-export async function getTradeData(opts = {}) {
-  const {
-    reporterCode = 842,        // default: US
-    period = new Date().getFullYear(),
-    cmdCode = '2709',          // default: crude oil
-    flowCode = 'M',            // M = imports, X = exports
-    partnerCode = null,        // null = all partners
-  } = opts;
-
-  const params = new URLSearchParams({
-    reporterCode: String(reporterCode),
-    period: String(period),
-    cmdCode,
-    flowCode,
-  });
-  if (partnerCode) params.set('partnerCode', String(partnerCode));
-
-  return safeFetch(`${BASE}/preview/C/A/HS?${params}`, { timeout: 20000 });
-}
-
-// Get bilateral trade between two countries for a commodity
-export async function getBilateralTrade(reporter, partner, cmdCode, period) {
-  return getTradeData({
-    reporterCode: reporter,
-    partnerCode: partner,
-    cmdCode,
-    period: period || new Date().getFullYear(),
-  });
-}
-
-// Check multiple commodities for a given reporter
-async function checkReporterCommodities(reporterCode, commodityCodes, period) {
-  const results = [];
-  for (const cmdCode of commodityCodes) {
-    const data = await getTradeData({
-      reporterCode,
-      cmdCode,
-      period,
-      flowCode: 'M', // imports
-    });
-    results.push({
-      commodity: STRATEGIC_COMMODITIES[cmdCode] || cmdCode,
-      cmdCode,
-      data,
-    });
+// 高影响力贸易数据：原油、天然气、半导体、黄金、武器
+async function getTradeFlow(partnerCode, commodityCode, reporterCode = '156') {
+  try {
+    const url = `${BASE}?reporterCode=${reporterCode}&partnerCode=${partnerCode}&period=202512&cmdCode=${commodityCode}&type=C&freq=M`;
+    const data = await safeFetch(url, { timeout: 12000 });
+    if (data?.error) return { commodityCode, error: data.error };
+    const records = data?.data || [];
+    const latest = records[0] || {};
+    return {
+      commodityCode,
+      period: latest.period || null,
+      primaryValue: latest.primaryValue || 0,
+      netWeight: latest.netWeightKg || 0,
+      quantity: latest.quantity || 0,
+      classification: latest.classification || latest.cmdCode,
+    };
+  } catch (e) {
+    return { commodityCode, error: e.message };
   }
-  return results;
 }
 
-// Compact a trade record for briefing output
-function compactRecord(rec) {
-  return {
-    reporter: rec.reporterDesc || rec.reporterCode,
-    partner: rec.partnerDesc || rec.partnerCode,
-    commodity: rec.cmdDesc || rec.cmdCode,
-    flow: rec.flowDesc || rec.flowCode,
-    value: rec.primaryValue || rec.cifvalue || rec.fobvalue || null,
-    quantity: rec.qty || rec.netWgt || null,
-    unit: rec.qtyUnitAbbr || rec.qtyUnitDesc || null,
-    period: rec.period,
-  };
-}
-
-// Detect anomalies in trade data (unusually large flows, new partners, etc.)
-function detectAnomalies(tradeRecords) {
-  const signals = [];
-  if (!Array.isArray(tradeRecords) || tradeRecords.length === 0) return signals;
-
-  const values = tradeRecords
-    .map(r => r.value)
-    .filter(v => typeof v === 'number' && v > 0);
-
-  if (values.length > 2) {
-    const avg = values.reduce((a, b) => a + b, 0) / values.length;
-    const stdDev = Math.sqrt(values.reduce((a, v) => a + (v - avg) ** 2, 0) / values.length);
-
-    tradeRecords.forEach(r => {
-      if (typeof r.value === 'number' && r.value > avg + 2 * stdDev) {
-        signals.push(
-          `OUTLIER: ${r.commodity} trade with ${r.partner} = $${(r.value / 1e9).toFixed(2)}B ` +
-          `(mean: $${(avg / 1e9).toFixed(2)}B)`
-        );
-      }
-    });
-  }
-
-  return signals;
-}
-
-// Briefing — check recent trade data for key commodities, detect anomalies
 export async function briefing() {
-  const currentYear = new Date().getFullYear();
-  const prevYear = currentYear - 1;
+  // 查询中国与主要伙伴的战略性商品贸易
+  // 合作伙伴：俄罗斯(643)、美国(842)、沙特(682)、欧盟总和(all)
+  // 商品：原油(2709)、天然气(2711)、黄金(7108)、半导体(8542)
 
-  // Key combinations to check: US imports of strategic commodities
-  const keyCommodities = ['2709', '2711', '7108', '8542', '93'];
-  const keyReporters = [842, 156]; // US, China
+  const [crude, gas, gold, chips] = await Promise.allSettled([
+    getTradeFlow('all', '2709'),  // 全球原油
+    getTradeFlow('all', '2711'),  // 全球天然气
+    getTradeFlow('all', '7108'),  // 全球黄金
+    getTradeFlow('all', '8542'),  // 全球半导体
+  ]);
 
-  const tradeFlows = [];
+  const results = {
+    crudeOil: crude.status === 'fulfilled' ? crude.value : { error: 'timeout' },
+    naturalGas: gas.status === 'fulfilled' ? gas.value : { error: 'timeout' },
+    gold: gold.status === 'fulfilled' ? gold.value : { error: 'timeout' },
+    semiconductors: chips.status === 'fulfilled' ? chips.value : { error: 'timeout' },
+  };
+
+  // 生成信号
   const signals = [];
-
-  for (const reporter of keyReporters) {
-    for (const cmdCode of keyCommodities) {
-      // Try current year first, fall back to previous year
-      let data = await getTradeData({
-        reporterCode: reporter,
-        cmdCode,
-        period: currentYear,
-        flowCode: 'M',
-      });
-
-      // Comtrade returns data in different structures; normalize
-      let records = data?.data || data?.dataset || [];
-      if (!Array.isArray(records)) records = [];
-
-      // If no current year data, try previous year
-      if (records.length === 0) {
-        data = await getTradeData({
-          reporterCode: reporter,
-          cmdCode,
-          period: prevYear,
-          flowCode: 'M',
-        });
-        records = data?.data || data?.dataset || [];
-        if (!Array.isArray(records)) records = [];
-      }
-
-      const compact = records.slice(0, 10).map(compactRecord);
-      if (compact.length > 0) {
-        tradeFlows.push({
-          reporter: COUNTRIES[reporter] || reporter,
-          commodity: STRATEGIC_COMMODITIES[cmdCode] || cmdCode,
-          cmdCode,
-          topPartners: compact,
-          totalRecords: records.length,
-        });
-
-        // Run anomaly detection
-        const anomalies = detectAnomalies(compact);
-        signals.push(...anomalies);
-      }
+  const add = (label, val) => {
+    if (val && !val.error) {
+      const v = val.primaryValue;
+      if (v > 0) signals.push(`${label} 最新贸易额 $${(v / 1e6).toFixed(1)}M`);
     }
-  }
+  };
+
+  add('全球原油进口', results.crudeOil);
+  add('全球天然气进口', results.naturalGas);
+  add('全球黄金', results.gold);
+  add('全球半导体进口', results.semiconductors);
 
   return {
     source: 'UN Comtrade',
     timestamp: new Date().toISOString(),
-    tradeFlows,
-    signals: signals.length > 0
-      ? signals
-      : ['No significant trade anomalies detected in sampled commodities'],
-    status: tradeFlows.length > 0 ? 'ok' : 'no_data',
-    note: 'Comtrade data often lags 1-2 months. Recent periods may be incomplete.',
-    coveredCommodities: STRATEGIC_COMMODITIES,
-    coveredCountries: COUNTRIES,
+    status: 'lightweight_preview_api',
+    signals,
+    data: results,
+    note: '使用UN Comtrade公开预览API，数据延迟约2个月，但覆盖主要商品贸易流',
   };
 }
 
-// Run standalone
 if (process.argv[1]?.endsWith('comtrade.mjs')) {
   const data = await briefing();
   console.log(JSON.stringify(data, null, 2));

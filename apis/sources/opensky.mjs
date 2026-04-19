@@ -5,10 +5,23 @@
 import { safeFetch } from '../utils/fetch.mjs';
 
 const BASE = 'https://opensky-network.org/api';
+const OPENSKY_USER = process.env.OPENSKY_USER || 'gray12345';
+const OPENSKY_PASS = process.env.OPENSKY_PASS || 'Fn8gF3ggCAHHr08X1Qwgp1Zfu0ST2o9Y';
+
+function authFetch(url, opts = {}) {
+  const credentials = Buffer.from(`${OPENSKY_USER}:${OPENSKY_PASS}`).toString('base64');
+  return safeFetch(url, {
+    ...opts,
+    headers: {
+      ...(opts.headers || {}),
+      Authorization: `Basic ${credentials}`,
+    },
+  });
+}
 
 // Get all current flights (global state vector)
 export async function getAllFlights() {
-  return safeFetch(`${BASE}/states/all`, { timeout: 30000 });
+  return authFetch(`${BASE}/states/all`, { timeout: 30000 });
 }
 
 // Get flights in a bounding box (lat/lon)
@@ -19,14 +32,14 @@ export async function getFlightsInArea(lamin, lomin, lamax, lomax) {
     lamax: String(lamax),
     lomax: String(lomax),
   });
-  return safeFetch(`${BASE}/states/all?${params}`, { timeout: 20000 });
+  return authFetch(`${BASE}/states/all?${params}`, { timeout: 20000 });
 }
 
 // Get flights by specific aircraft (ICAO24 hex codes)
 export async function getFlightsByIcao(icao24List) {
   const icao = Array.isArray(icao24List) ? icao24List : [icao24List];
   const params = icao.map(i => `icao24=${i}`).join('&');
-  return safeFetch(`${BASE}/states/all?${params}`, { timeout: 20000 });
+  return authFetch(`${BASE}/states/all?${params}`, { timeout: 20000 });
 }
 
 // Get departures from an airport in a time range
@@ -36,7 +49,7 @@ export async function getDepartures(airportIcao, begin, end) {
     begin: String(Math.floor(begin / 1000)),
     end: String(Math.floor(end / 1000)),
   });
-  return safeFetch(`${BASE}/flights/departure?${params}`);
+  return authFetch(`${BASE}/flights/departure?${params}`);
 }
 
 // Get arrivals at an airport
@@ -46,7 +59,7 @@ export async function getArrivals(airportIcao, begin, end) {
     begin: String(Math.floor(begin / 1000)),
     end: String(Math.floor(end / 1000)),
   });
-  return safeFetch(`${BASE}/flights/arrival?${params}`);
+  return authFetch(`${BASE}/flights/arrival?${params}`);
 }
 
 // Key hotspot regions for monitoring

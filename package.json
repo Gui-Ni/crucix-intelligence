@@ -22,15 +22,15 @@
   ],
   "author": "Crucix",
   "license": "AGPL-3.0-only",
-  "engines": {
-    "node": ">=22",
-    "npm": ">=10"
-  },
   "dependencies": {
+    "cors": "^2.8.6",
+    "dotenv": "^17.4.2",
     "express": "^5.1.0"
   },
   "optionalDependencies": {
-    "discord.js": "^14.25.1"  },
+    "discord.js": "^14.25.1"
+  },
   "overrides": {
-    "undici": "^7.24.4"  }
+    "undici": "^7.24.4"
+  }
 }

@@ -28,6 +28,28 @@ const SYMBOLS = {
   'ETH-USD': 'Ethereum',
   // Volatility
   '^VIX': 'VIX',
+  // US Megacap Stocks
+  NVDA: 'Nvidia',
+  AAPL: 'Apple',
+  MSFT: 'Microsoft',
+  GOOGL: 'Alphabet',
+  AMZN: 'Amazon',
+  META: 'Meta',
+  TSLA: 'Tesla',
+  AVGO: 'Broadcom',
+  JPM: 'JPMorgan',
+  GS: 'Goldman Sachs',
+  V: 'Visa',
+  WMT: 'Walmart',
+  PG: 'Procter & Gamble',
+  KO: 'Coca-Cola',
+  PEP: 'PepsiCo',
+  XOM: 'ExxonMobil',
+  CVX: 'Chevron',
+  UNH: 'UnitedHealth',
+  JNJ: 'Johnson & Johnson',
+  CAT: 'Caterpillar',
+  NFLX: 'Netflix',
 };
 
 async function fetchQuote(symbol) {
@@ -122,6 +144,7 @@ export async function collect() {
     commodities: pickGroup(quotes, ['GC=F', 'SI=F', 'CL=F', 'BZ=F', 'NG=F']),
     crypto: pickGroup(quotes, ['BTC-USD', 'ETH-USD']),
     volatility: pickGroup(quotes, ['^VIX']),
+    stocks: pickGroup(quotes, ['NVDA','AAPL','MSFT','GOOGL','AMZN','META','TSLA','AVGO','JPM','GS','V','WMT','PG','KO','PEP','XOM','CVX','UNH','JNJ','CAT','NFLX']),
   };
 }
 

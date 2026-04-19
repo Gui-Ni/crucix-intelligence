@@ -15,7 +15,6 @@ import { briefing as safecast } from './sources/safecast.mjs';
 import { briefing as acled } from './sources/acled.mjs';
 import { briefing as reliefweb } from './sources/reliefweb.mjs';
 import { briefing as who } from './sources/who.mjs';
-import { briefing as ofac } from './sources/ofac.mjs';
 import { briefing as opensanctions } from './sources/opensanctions.mjs';
 import { briefing as adsb } from './sources/adsb.mjs';
 
@@ -27,9 +26,11 @@ import { briefing as eia } from './sources/eia.mjs';
 import { briefing as gscpi } from './sources/gscpi.mjs';
 import { briefing as usaspending } from './sources/usaspending.mjs';
 import { briefing as comtrade } from './sources/comtrade.mjs';
+import { briefing as cnmacro } from './sources/cnmacro.mjs';
 
 // === Tier 3: Weather, Environment, Technology, Social ===
 import { briefing as noaa } from './sources/noaa.mjs';
+import { briefing as cnnews } from './sources/cnnews.mjs';
 import { briefing as epa } from './sources/epa.mjs';
 import { briefing as patents } from './sources/patents.mjs';
 import { briefing as bluesky } from './sources/bluesky.mjs';
@@ -42,12 +43,13 @@ import { briefing as space } from './sources/space.mjs';
 
 // === Tier 5: Live Market Data ===
 import { briefing as yfinance } from './sources/yfinance.mjs';
+import { briefing as eastmoney } from './sources/eastmoney.mjs';
 
 // === Tier 6: Cyber & Infrastructure ===
 import { briefing as cisaKev } from './sources/cisa-kev.mjs';
 import { briefing as cloudflareRadar } from './sources/cloudflare-radar.mjs';
 
-const SOURCE_TIMEOUT_MS = 30_000; // 30s max per individual source
+const SOURCE_TIMEOUT_MS = 45_000; // 45s max per individual source
 
 export async function runSource(name, fn, ...args) {
   const start = Date.now();
@@ -58,6 +60,10 @@ export async function runSource(name, fn, ...args) {
       timer = setTimeout(() => reject(new Error(`Source ${name} timed out after ${SOURCE_TIMEOUT_MS / 1000}s`)), SOURCE_TIMEOUT_MS);
     });
     const data = await Promise.race([dataPromise, timeoutPromise]);
+    // Treat sources that return an error object as failed, not ok
+    if (data && typeof data === 'object' && data.error) {
+      return { name, status: 'error', durationMs: Date.now() - start, error: data.error };
+    }
     return { name, status: 'ok', durationMs: Date.now() - start, data };
   } catch (e) {
     return { name, status: 'error', durationMs: Date.now() - start, error: e.message };
@@ -67,7 +73,7 @@ export async function runSource(name, fn, ...args) {
 }
 
 export async function fullBriefing() {
-  console.error('[Crucix] Starting intelligence sweep — 29 sources...');
+  console.error('[Crucix] Starting intelligence sweep...');
   const start = Date.now();
 
   const allPromises = [
@@ -80,7 +86,7 @@ export async function fullBriefing() {
     runSource('ACLED', acled),
     runSource('ReliefWeb', reliefweb),
     runSource('WHO', who),
-    runSource('OFAC', ofac),
+    // OFAC 被墙，用 OpenSanctions 替代制裁数据（见 opensanctions.mjs）
     runSource('OpenSanctions', opensanctions),
     runSource('ADS-B', adsb),
 
@@ -92,9 +98,11 @@ export async function fullBriefing() {
     runSource('GSCPI', gscpi),
     runSource('USAspending', usaspending),
     runSource('Comtrade', comtrade),
+    runSource('CN-Macro', cnmacro),
 
     // Tier 3: Weather, Environment, Technology, Social
     runSource('NOAA', noaa),
+    runSource('THS-CN-News', cnnews),
     runSource('EPA', epa),
     runSource('Patents', patents),
     runSource('Bluesky', bluesky),
@@ -107,14 +115,13 @@ export async function fullBriefing() {
 
     // Tier 5: Live Market Data
     runSource('YFinance', yfinance),
+    runSource('EastMoney/CN', eastmoney),
 
     // Tier 6: Cyber & Infrastructure
     runSource('CISA-KEV', cisaKev),
     runSource('Cloudflare-Radar', cloudflareRadar),
   ];
 
-  // Each runSource has its own 30s timeout, so allSettled will resolve
-  // within ~30s even if APIs hang. Global timeout is a safety net.
   const results = await Promise.allSettled(allPromises);
 
   const sources = results.map(r => r.status === 'fulfilled' ? r.value : { status: 'failed', error: r.reason?.message });

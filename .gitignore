@@ -46,3 +46,5 @@ MAINTAINER_DECISIONS.local.md
 
 # Local deploy config
 dashboard/public/vercel.json
+.vercel
+.env*.local

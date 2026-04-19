@@ -4,6 +4,7 @@
 
 import 'dotenv/config';
 import express from 'express';
+import cors from 'cors';
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'fs';
 import { dirname, join } from 'path';
 import { fileURLToPath } from 'url';
@@ -50,7 +51,7 @@ const VERCEL_RELAY_URL = process.env.VERCEL_RELAY_URL || null;
 async function pushToVercel(data) {
   if (!VERCEL_RELAY_URL) return;
   try {
-    const url = VERCEL_RELAY_URL.replace(/\/$/, '') + '/api/push-data';
+    const url = VERCEL_RELAY_URL.replace(/\/$/, '') + '/api/data';
     await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -279,6 +280,7 @@ if (discordAlerter.isConfigured) {
 // === Express Server ===
 const app = express();
 app.use(express.json({ limit: '50mb' }));
+app.use(cors({ origin: '*', methods: ['GET', 'POST', 'OPTIONS'], allowedHeaders: ['Content-Type'] }));
 app.use(express.static(join(ROOT, 'dashboard/public')));
 
 // Serve loading page until first sweep completes, then the dashboard with injected locale
@@ -313,9 +315,8 @@ app.use((err, req, res, next) => {
 
 // API: current data
 app.get('/api/data', (req, res) => {
-  // Always read from /tmp/latest.json (written by local server after each sweep)
-  // On cold Vercel start /tmp/latest.json may not exist yet — return 503 so
-  // frontend keeps its inline data rather than overwriting with undefined
+  // Prefer in-memory currentData (local server), fall back to /tmp/latest.json (Vercel serverless)
+  if (currentData) return res.json(currentData);
   try {
     if (existsSync('/tmp/latest.json')) {
       const data = JSON.parse(readFileSync('/tmp/latest.json', 'utf8'));
@@ -478,6 +479,11 @@ async function runSweepCycle() {
 
     currentData = synthesized;
 
+    // Write to /tmp/latest.json so Tailscale-served API can read it
+    try {
+      writeFileSync('/tmp/latest.json', JSON.stringify(synthesized));
+    } catch (_) {}
+
     // 6. Push to all connected browsers
     broadcast({ type: 'update', data: currentData });
 
@@ -550,6 +556,8 @@ async function start() {
       const existing = JSON.parse(readFileSync(join(RUNS_DIR, 'latest.json'), 'utf8'));
       const data = await synthesize(existing);
       currentData = data;
+      // Also write to /tmp/latest.json so Tailscale-served API can read it
+      try { writeFileSync('/tmp/latest.json', JSON.stringify(data)); } catch (_) {}
       console.log('[Crucix] Loaded existing data from runs/latest.json — dashboard ready instantly');
       broadcast({ type: 'update', data: currentData });
     } catch {

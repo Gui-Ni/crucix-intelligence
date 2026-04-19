@@ -17,7 +17,7 @@ export async function safeFetch(url, opts = {}) {
         throw new Error(`HTTP ${res.status}: ${body.slice(0, 200)}`);
       }
       const text = await res.text();
-      try { return JSON.parse(text); } catch { return { rawText: text.slice(0, 500) }; }
+      try { return JSON.parse(text); } catch { return { rawText: text.slice(0, 5000) }; }
     } catch (e) {
       lastError = e;
       // GDELT needs 5s between requests, others are fine with shorter delays

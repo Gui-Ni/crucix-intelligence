@@ -1,22 +1,43 @@
-// Vercel serverless function: proxies /api/data to Tailscale local server
-// This lets Vercel-hosted jarvis.html get real-time data from the local Crucix server
+// Vercel serverless function: receives data pushed from local Crucix server
+// POST /api/push-data with JSON body → stores to /tmp/latest.json
+// GET /api/data → serves from /tmp/latest.json
+// Both POST and GET share the same function instance so /tmp is accessible
 
-const TAILSCALE_URL = 'https://desktop-tatot3u.tailf401c5.ts.net';
+import { writeFileSync, readFileSync, existsSync } from 'fs';
+
+const TMP_PATH = '/tmp/latest.json';
 
 export default async function handler(req, res) {
-  try {
-    const response = await fetch(`${TAILSCALE_URL}/api/data`, {
-      signal: AbortSignal.timeout(15000),
-    });
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
 
-    if (!response.ok) {
-      return res.status(response.status).json({ error: 'Upstream error', detail: response.statusText });
+  if (req.method === 'OPTIONS') return res.status(204).end();
+
+  if (req.method === 'GET') {
+    if (!existsSync(TMP_PATH)) {
+      return res.status(503).json({ error: 'No data yet — send POST first' });
     }
-
-    const data = await response.json();
-    return res.status(200).json(data);
-  } catch (err) {
-    console.error('[api/data] Proxy error:', err.message);
-    return res.status(503).json({ error: 'Data unavailable', detail: err.message });
+    try {
+      const data = readFileSync(TMP_PATH, 'utf8');
+      return res.status(200).json(JSON.parse(data));
+    } catch (err) {
+      return res.status(500).json({ error: err.message });
+    }
   }
+
+  if (req.method === 'POST') {
+    try {
+      const data = req.body;
+      if (!data) return res.status(400).json({ error: 'No body' });
+      writeFileSync(TMP_PATH, JSON.stringify(data));
+      console.log('[push-data] Written timestamp:', data?.meta?.timestamp);
+      return res.status(200).json({ ok: true, timestamp: data?.meta?.timestamp });
+    } catch (err) {
+      console.error('[push-data] Error:', err.message);
+      return res.status(500).json({ error: err.message });
+    }
+  }
+
+  return res.status(405).json({ error: 'Method not allowed' });
 }

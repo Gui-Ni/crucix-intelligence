@@ -379,6 +379,12 @@ app.get('/api/locales', (req, res) => {
   });
 });
 
+// API: full locale data (for static file serving on Vercel)
+app.get('/api/locale', (req, res) => {
+  const locale = getLocale();
+  res.json(locale);
+});
+
 // SSE: live updates
 app.get('/events', (req, res) => {
   res.writeHead(200, {

@@ -1,6 +1,7 @@
 {
   "version": 2,
   "rewrites": [
+    { "source": "/api/data", "destination": "/api/data" },
     { "source": "/", "destination": "/dashboard/public/jarvis.html" },
     { "source": "/(.*)", "destination": "/dashboard/public/$1" }
   ]

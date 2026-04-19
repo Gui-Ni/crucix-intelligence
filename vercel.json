@@ -1,32 +1,6 @@
 {
   "version": 2,
-  "builds": [
-    {
-      "src": "server.mjs",
-      "use": "@vercel/node",
-      "config": {
-        "runtime": "nodejs22.x",
-        "maxDuration": 60,
-        "memory": 1024
-      }
-    }
-  ],
-  "routes": [
-    {
-      "src": "/events",
-      "dest": "/server.mjs"
-    },
-    {
-      "src": "/api/(.*)",
-      "dest": "/server.mjs"
-    },
-    {
-      "src": "/(.*)",
-      "dest": "/server.mjs"
-    }
-  ],
-  "env": {
-    "NODE_ENV": "production"
-  },
-  "regions": ["iad1"]
+  "rewrites": [
+    { "src": "/(.*)", "destination": "/server.mjs" }
+  ]
 }

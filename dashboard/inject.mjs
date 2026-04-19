@@ -171,9 +171,16 @@ const RSS_SOURCE_FALLBACKS = {
   'SBS Australia': { lat: -35.2809, lon: 149.13, region: 'Australia' },
   'Indian Express': { lat: 28.6139, lon: 77.209, region: 'India' },
   'The Hindu': { lat: 13.0827, lon: 80.2707, region: 'India' },
-  'MercoPress': { lat: -34.9011, lon: -56.1645, region: 'South America' }
+  'MercoPress': { lat: -34.9011, lon: -56.1645, region: 'South America' },
+  '36氪': { lat: 39.9, lon: 116.4, region: 'China' },
+  '华尔街见闻': { lat: 31.2, lon: 121.5, region: 'China' },
+  '金十数据': { lat: 31.2, lon: 121.5, region: 'China' },
+  '第一财经': { lat: 31.2, lon: 121.5, region: 'China' },
+  'iThome': { lat: 25, lon: 121.5, region: 'Taiwan' },
+  'Bloomberg': { lat: 40.7, lon: -74, region: 'US' },
+  'Reuters': { lat: 51.5, lon: -0.1, region: 'UK' }
 };
-const REGIONAL_NEWS_SOURCES = ['MercoPress', 'Indian Express', 'The Hindu', 'SBS Australia'];
+const REGIONAL_NEWS_SOURCES = ['MercoPress', 'Indian Express', 'The Hindu', 'SBS Australia', '36氪', '华尔街见闻', '金十数据', '第一财经', 'iThome'];
 
 export async function fetchAllNews() {
   const feeds = [
@@ -203,6 +210,22 @@ export async function fetchAllNews() {
     ['https://www.thehindu.com/news/national/feeder/default.rss', 'The Hindu'],
     // South America
     ['https://en.mercopress.com/rss/latin-america', 'MercoPress'],
+    // China — 36氪
+    ['https://36kr.com/feed', '36氪'],
+    // China — 华尔街见闻
+    ['https://feed.wallstreetcn.com/rss', '华尔街见闻'],
+    // China — 金十数据
+    ['https://rsshub.rssforever.com/jin10/news', '金十数据'],
+    // China — 第一财经
+    ['https://rsshub.rssforever.com/yicai/news', '第一财经'],
+    // Taiwan — iThome
+    ['https://www.ithome.com.tw/rss', 'iThome'],
+    // China — 人民网时政 (人民网RSS已停更，换用BBC中文)
+    ['https://rsshub.rssforever.com/bbc/chinese', 'BBC中文'],
+    // Global — Bloomberg
+    ['https://feeds.bloomberg.com/markets/news.rss', 'Bloomberg'],
+    // Global — Reuters
+    ['https://feeds.reuters.com/reuters/worldNews', 'Reuters'],
   ];
 
   const results = await Promise.allSettled(
@@ -563,6 +586,10 @@ export async function synthesize(data) {
       symbol: q.symbol, name: q.name, price: q.price,
       change: q.change, changePct: q.changePct
     })),
+    stocks: (yfData.stocks || []).map(q => ({
+      symbol: q.symbol, name: q.name, price: q.price,
+      change: q.change, changePct: q.changePct
+    })),
     vix: yfQuotes['^VIX'] ? {
       value: yfQuotes['^VIX'].price,
       change: yfQuotes['^VIX'].change,
@@ -593,8 +620,90 @@ export async function synthesize(data) {
   if (yfNatgas?.price) energy.natgas = yfNatgas.price;
   if (yfWti?.history?.length) energy.wtiRecent = yfWti.history.map(h => h.close);
 
-  // Fetch RSS
+  // === China Markets (EastMoney/Tencent) ===
+  const cnMarketRaw = data.sources['EastMoney/CN'] || {};
+  const cnMarketData = cnMarketRaw.data || {};
+  const cnmarkets = {
+    indexes: (cnMarketData.indexes || []).map(q => ({
+      name: q.label, symbol: q.code, price: q.price,
+      change: q.change, changePct: q.changePct
+    })),
+    hk: (cnMarketData.hk || []).map(q => ({
+      name: q.label, symbol: q.code, price: q.price,
+      change: q.change, changePct: q.changePct
+    })),
+    commodities: (cnMarketData.commodities || []).map(q => ({
+      name: q.label, price: q.price, change: q.change, changePct: q.changePct
+    })),
+    stocks: (cnMarketData.stocks || []).map(q => ({
+      name: q.label, symbol: q.code, price: q.price,
+      change: q.change, changePct: q.changePct
+    })),
+  };
+
+  // === China Macro (CN-Macro: GDP/CPI/PMI) ===
+  const cnmacro = data.sources['CN-Macro'] || {};
+
+  // === THS China News (同花顺快讯) ===
+  const cnnewsData = data.sources['THS-CN-News'] || {};
+  const cnnewsItems = (cnnewsData.all || []).map(n => ({
+    headline: n.title, source: n.source || '同花顺',
+    type: 'ths', timestamp: n.timestamp, region: 'CN', urgent: false, url: n.url
+  }));
+
+  // Fetch RSS first so we can use it for both newsFeed and geoStream
   const news = await fetchAllNews();
+
+  // Add THS-CN-News to map (with default China geo coords, since they lack lat/lon)
+  if (cnnewsItems.length) {
+    const cnGeo = { lat: 39.9, lon: 116.4, region: 'China' };
+    const thsWithGeo = cnnewsItems.map(n => ({
+      ...n,
+      lat: cnGeo.lat + (Math.random() - 0.5) * 2,
+      lon: cnGeo.lon + (Math.random() - 0.5) * 2,
+      region: 'China'
+    }));
+    news.push(...thsWithGeo);
+  }
+
+  // === Geo Stream: International RSS + THS-CN-News (GDELT API replaced with RSS) ===
+  const GEO_KW = ['conflict', 'military', 'war', 'sanction', 'crisis', 'tension', 'attack', 'drill', 'regime', 'nuclear', 'missile', 'troop', 'invasion', 'ceasefire', 'evacuation', 'trump', 'iran', 'ukraine', 'russia', 'china', 'nato', 'tariff'];
+  const isGeoUrgent = (t) => GEO_KW.some(k => (t||'').toLowerCase().includes(k));
+  const geoStream = [];
+  // Add THS-CN-News (Chinese emergency/OSINT) — max 8
+  for (const n of cnnewsItems.slice(0, 8)) {
+    geoStream.push({
+      text: (n.headline || '').substring(0, 120),
+      source: n.source || '同花顺',
+      date: n.timestamp || new Date().toISOString(),
+      urgent: isGeoUrgent(n.headline),
+      channel: n.source || '同花顺',
+      views: null,
+    });
+  }
+  // Add international RSS items to geoStream (geopolitical keyword filter) — max 12
+  const INT_SOURCES = ['BBC', 'NYT', 'Al Jazeera', 'Reuters', 'France 24', 'NPR', 'DW', 'Euronews', 'Bloomberg'];
+  const seenKeys = new Set();
+  const addUnique = (item) => {
+    const key = `${item.source}|${item.title}`.substring(0, 80);
+    if (seenKeys.has(key)) return;
+    seenKeys.add(key);
+    geoStream.push({
+      text: item.title.substring(0, 120),
+      source: item.source,
+      date: item.date || new Date().toISOString(),
+      urgent: isGeoUrgent(item.title),
+      channel: item.source,
+      views: null,
+    });
+  };
+  for (const n of news) {
+    if (!INT_SOURCES.some(s => (n.source || '').includes(s))) continue;
+    if (!isGeoUrgent(n.title)) continue;
+    addUnique(n);
+    if (geoStream.length >= 20) break;
+  }
+  geoStream.sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0));
 
   const V2 = {
     meta: data.crucix, air, thermal, tSignals, chokepoints, nuke, nukeSignals,
@@ -610,23 +719,31 @@ export async function synthesize(data) {
     tg: { posts: tgData.totalPosts || 0, urgent: tgUrgent, topPosts: tgTop },
     who, fred, energy, metals, bls, treasury, gscpi, defense, noaa, epa, acled, gdelt, space, health, news,
     markets, // Live Yahoo Finance market data
+    cnmarkets, // China Markets (EastMoney/Tencent)
+    cnmacro, // China Macro (GDP/CPI/PMI)
     ideas: [], ideasSource: 'disabled',
-    // newsFeed for ticker (merged RSS + GDELT + Telegram)
-    newsFeed: buildNewsFeed(news, gdeltData, tgUrgent, tgTop),
+    // newsFeed for ticker (merged RSS + Telegram + THS China News)
+    newsFeed: buildNewsFeed(news, gdeltData, tgUrgent, tgTop, cnnewsItems),
+    // geoStream for OSINT panel (international RSS + THS-CN-News, geopolitical focus)
+    geoStream,
   };
 
   return V2;
 }
 
 // === Unified News Feed for Ticker ===
-function buildNewsFeed(rssNews, gdeltData, tgUrgent, tgTop) {
+function buildNewsFeed(rssNews, gdeltData, tgUrgent, tgTop, cnnewsItems = []) {
   const feed = [];
+
+  // CN priority sources (Chinese + Taiwan RSS + THS news)
+  const CN_SOURCES = ['36氪', '华尔街见闻', '金十数据', '第一财经', 'iThome', '同花顺', 'THS-CN-News'];
 
   // RSS news
   for (const n of rssNews) {
     feed.push({
       headline: n.title, source: n.source, type: 'rss',
-      timestamp: n.date, region: n.region, urgent: false, url: n.url
+      timestamp: n.date, region: n.region, urgent: false, url: n.url,
+      isCN: CN_SOURCES.some(s => (n.source || '').includes(s))
     });
   }
 
@@ -636,7 +753,8 @@ function buildNewsFeed(rssNews, gdeltData, tgUrgent, tgTop) {
       const geo = geoTagText(a.title);
       feed.push({
         headline: a.title.substring(0, 100), source: 'GDELT', type: 'gdelt',
-        timestamp: new Date().toISOString(), region: geo?.region || 'Global', urgent: false, url: sanitizeExternalUrl(a.url)
+        timestamp: new Date().toISOString(), region: geo?.region || 'Global', urgent: false, url: sanitizeExternalUrl(a.url),
+        isCN: false
       });
     }
   }
@@ -646,7 +764,8 @@ function buildNewsFeed(rssNews, gdeltData, tgUrgent, tgTop) {
     const text = (p.text || '').replace(/[\u{1F1E0}-\u{1F1FF}]/gu, '').trim();
     feed.push({
       headline: text.substring(0, 100), source: p.channel?.toUpperCase() || 'TELEGRAM',
-      type: 'telegram', timestamp: p.date, region: 'OSINT', urgent: true
+      type: 'telegram', timestamp: p.date, region: 'OSINT', urgent: true,
+      isCN: false
     });
   }
 
@@ -655,15 +774,32 @@ function buildNewsFeed(rssNews, gdeltData, tgUrgent, tgTop) {
     const text = (p.text || '').replace(/[\u{1F1E0}-\u{1F1FF}]/gu, '').trim();
     feed.push({
       headline: text.substring(0, 100), source: p.channel?.toUpperCase() || 'TELEGRAM',
-      type: 'telegram', timestamp: p.date, region: 'OSINT', urgent: false
+      type: 'telegram', timestamp: p.date, region: 'OSINT', urgent: false,
+      isCN: false
     });
   }
 
-  // Filter to last 30 days, sort by timestamp descending, limit to 50
+  // THS China News (同花顺快讯)
+  for (const n of cnnewsItems) {
+    feed.push({
+      headline: n.headline, source: n.source, type: n.type || 'ths',
+      timestamp: n.timestamp, region: n.region || 'CN', urgent: n.urgent || false, url: n.url,
+      isCN: true
+    });
+  }
+
+  // Filter to last 30 days
   const cutoff = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
   const recent = feed.filter(item => !item.timestamp || new Date(item.timestamp) >= cutoff);
-  recent.sort((a, b) => new Date(b.timestamp || 0) - new Date(a.timestamp || 0));
 
+  // Sort: CN items first (by time), then others (by time)
+  recent.sort((a, b) => {
+    if (a.isCN && !b.isCN) return -1;
+    if (!a.isCN && b.isCN) return 1;
+    return new Date(b.timestamp || 0) - new Date(a.timestamp || 0);
+  });
+
+  // Deduplicate
   const selected = [];
   const selectedKeys = new Set();
   const keyFor = item => `${item.type}|${item.source}|${item.headline}|${item.timestamp}`;
@@ -674,11 +810,12 @@ function buildNewsFeed(rssNews, gdeltData, tgUrgent, tgTop) {
     selectedKeys.add(key);
   };
 
-  for (const source of REGIONAL_NEWS_SOURCES) {
-    recent.filter(item => item.source === source).slice(0, 2).forEach(pushUnique);
-  }
-  recent.forEach(pushUnique);
-  return selected.slice(0, 50);
+  const cnItems = recent.filter(item => item.isCN);
+  const otherItems = recent.filter(item => !item.isCN);
+  cnItems.slice(0, 23).forEach(pushUnique);  // CN: max 23
+  otherItems.slice(0, 7).forEach(pushUnique);  // EN: max 7
+
+  return selected.slice(0, 30);
 }
 
 // === CLI Mode: inject into HTML file ===

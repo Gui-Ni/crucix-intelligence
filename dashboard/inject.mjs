@@ -668,10 +668,12 @@ export async function synthesize(data) {
 
   // === Geo Stream: International RSS + THS-CN-News (GDELT API replaced with RSS) ===
   const GEO_KW = ['conflict', 'military', 'war', 'sanction', 'crisis', 'tension', 'attack', 'drill', 'regime', 'nuclear', 'missile', 'troop', 'invasion', 'ceasefire', 'evacuation', 'trump', 'iran', 'ukraine', 'russia', 'china', 'nato', 'tariff'];
-  const isGeoUrgent = (t) => GEO_KW.some(k => (t||'').toLowerCase().includes(k));
+  const GEO_KW_CN = ['伊朗', '以色列', '美国', '俄罗斯', '乌克兰', '中东', '制裁', '战争', '冲突', '美军', '北约', '胡塞', '霍尔木兹', '中美', '台海', '南海', '朝鲜', '核武', '导弹', '军事', '演习', '军舰', '航母', '战斗机'];
+  const isGeoUrgent = (t) => GEO_KW.some(k => (t||'').toLowerCase().includes(k)) || GEO_KW_CN.some(k => (t||'').includes(k));
   const geoStream = [];
-  // Add THS-CN-News (Chinese emergency/OSINT) — max 8
-  for (const n of cnnewsItems.slice(0, 8)) {
+  // Add THS-CN-News (Chinese emergency/OSINT) — geopolitical only, max 8
+  const geoCnNews = cnnewsItems.filter(n => n.topics?.includes('geopolitical'));
+  for (const n of geoCnNews.slice(0, 8)) {
     geoStream.push({
       text: (n.headline || '').substring(0, 120),
       source: n.source || '同花顺',

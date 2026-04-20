@@ -65,6 +65,13 @@ async function pushToVercel(data) {
 
 // === Auto-deploy: update jarvis.html inline data + push to GitHub ===
 const AUTO_DEPLOY = process.env.AUTO_DEPLOY === 'true';
+import { createHash } from 'crypto';
+
+function getDataHash(html) {
+  const m = html.match(/let D = (\{[\s\S]*?\});/);
+  if (!m) return null;
+  return createHash('sha256').update(m[1]).digest('hex').slice(0, 12);
+}
 
 async function updateAndPushHtml(data) {
   if (!AUTO_DEPLOY) return;
@@ -72,19 +79,31 @@ async function updateAndPushHtml(data) {
     const htmlPath = join(ROOT, 'dashboard/public/jarvis.html');
     const html = readFileSync(htmlPath, 'utf8');
     const json = JSON.stringify(data);
-    const updated = html.replace(/^(let|const) D = .*;$/m, () => 'let D = ' + json + ';');
+    const updated = html.replace(/let D = \{[\s\S]*?\};/m, 'let D = ' + json + ';');
+
+    const oldHash = getDataHash(html);
+    const newHash = getDataHash(updated);
+    console.log(`[Crucix] updateAndPushHtml: oldHash=${oldHash} newHash=${newHash} same=${oldHash===newHash}`);
+    if (oldHash === newHash) return;
+
     writeFileSync(htmlPath, updated);
 
-    execSync('git add dashboard/public/jarvis.html', { cwd: ROOT, stdio: 'pipe' });
-    const { stdout } = execSync('git diff --cached --stat', { cwd: ROOT, encoding: 'utf8' });
-    if (!stdout || !stdout.trim()) { console.log('[Crucix] No jarvis.html changes to push'); return; }
-
+    // Git commit — use --allow-empty to force commit even if git thinks nothing changed
     const timestamp = new Date().toISOString().slice(0, 19).replace('T', ' ');
-    execSync(`git commit -m "chore: auto-update dashboard data ${timestamp}"`, { cwd: ROOT, stdio: 'ignore' });
+    execSync(`git add dashboard/public/jarvis.html`, { cwd: ROOT, stdio: 'pipe', encoding: 'utf8' });
+    const diff = execSync(`git diff --cached --stat`, { cwd: ROOT, stdio: 'pipe', encoding: 'utf8' });
+    console.log(`[Crucix] git diff: ${diff.toString().trim()}`);
+
+    // If git diff is empty but hashes differ, force commit with --allow-empty
+    const diffStr = diff.toString().trim();
+    if (!diffStr) {
+      console.log('[Crucix] Forcing commit despite empty diff (hash changed)');
+    }
+    execSync(`git commit -m "chore: auto-update dashboard data ${timestamp}" --allow-empty`, { cwd: ROOT, stdio: 'ignore' });
     execSync('git push origin master', { cwd: ROOT, stdio: 'ignore' });
     console.log('[Crucix] jarvis.html pushed to GitHub — Vercel will auto-deploy');
   } catch (e) {
-    console.warn('[Crucix] GitHub push failed:', e.message);
+    console.warn('[Crucix] GitHub push failed:', e.message, e.stack?.split('\n')[1] || '');
   }
 }
 

@@ -244,7 +244,7 @@ if (telegramAlerter.isConfigured) {
     console.log('[Crucix] /portfolio command received');
     try {
       const { stdout } = await new Promise((resolve, reject) => {
-        exec('python scripts/qmt_positions.py', { cwd: ROOT, timeout: 30000 }, (err, stdout, stderr) => {
+        exec('python scripts/qmt_positions.py', { cwd: ROOT, timeout: 15000 }, (err, stdout, stderr) => {
           if (err) reject(err);
           else resolve({ stdout, stderr });
         });
@@ -285,7 +285,7 @@ if (telegramAlerter.isConfigured) {
       return lines.join('\n');
     } catch (err) {
       console.error('[Crucix] /portfolio error:', err.message);
-      return `❌ 持仓查询失败: ${err.message}\n请确认QMT客户端已运行且已登录。`;
+      return `❌ 持仓查询失败，请确认QMT客户端已登录运行。`;
     }
   });
 

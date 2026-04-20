@@ -9,6 +9,7 @@ import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'fs';
 import { dirname, join } from 'path';
 import { fileURLToPath } from 'url';
 import { exec, execSync } from 'child_process';
+import { createHash } from 'crypto';
 import config from './crucix.config.mjs';
 import { getLocale, currentLanguage, getSupportedLocales } from './lib/i18n.mjs';
 import { fullBriefing } from './apis/briefing.mjs';
@@ -65,7 +66,6 @@ async function pushToVercel(data) {
 
 // === Auto-deploy: update jarvis.html inline data + push to GitHub ===
 const AUTO_DEPLOY = process.env.AUTO_DEPLOY === 'true';
-import { createHash } from 'crypto';
 
 function getDataHash(html) {
   const m = html.match(/let D = (\{[\s\S]*?\});/);

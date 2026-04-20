@@ -213,7 +213,7 @@ if (telegramAlerter.isConfigured) {
       const topNews = newsFeed.slice(0, 5);
       sections.push(`📰 *实时新闻滚动（${newsFeed.length}条）*`);
       for (const n of topNews) {
-        const headline = (n.headline || '').substring(0, 60);
+        const headline = (n.headline || '').substring(0, 60).replace(/([_*`])/g, '\\$1');
         sections.push(`  [${n.source || '未知'}] ${headline}`);
       }
       sections.push('');

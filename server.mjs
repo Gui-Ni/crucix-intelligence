@@ -180,6 +180,34 @@ if (telegramAlerter.isConfigured) {
       sections.push('');
     }
 
+    // US market indices
+    const usIndexes = currentData.markets?.indexes || [];
+    if (usIndexes.length > 0) {
+      const usLines = usIndexes.slice(0, 6).map(q => {
+        const chg = q.changePct !== undefined ? `${q.changePct > 0 ? '+' : ''}${q.changePct.toFixed(2)}%` : '--';
+        return `${q.name || q.symbol}: ${q.price !== undefined ? q.price.toFixed(2) : '--'} (${chg})`;
+      });
+      sections.push(`🇺🇸 *美股（${usIndexes.length}）*`);
+      sections.push(usLines.join(' | '));
+      sections.push('');
+    }
+
+    // China A-share + HK indices
+    const cnIndexes = currentData.cnmarkets?.indexes || [];
+    const hkIndexes = currentData.cnmarkets?.hk || [];
+    if (cnIndexes.length > 0 || hkIndexes.length > 0) {
+      const allCN = [...cnIndexes.slice(0, 4), ...hkIndexes.slice(0, 2)];
+      if (allCN.length > 0) {
+        const cnLines = allCN.map(q => {
+          const chg = q.changePct !== undefined ? `${q.changePct > 0 ? '+' : ''}${q.changePct.toFixed(2)}%` : '--';
+          return `${q.name}: ${q.price !== undefined ? q.price.toFixed(2) : '--'} (${chg})`;
+        });
+        sections.push(`🇨🇳 *A股/港股*`);
+        sections.push(cnLines.join(' | '));
+        sections.push('');
+      }
+    }
+
     // News ticker summary
     if (newsFeed.length > 0) {
       const topNews = newsFeed.slice(0, 5);

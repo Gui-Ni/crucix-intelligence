@@ -158,7 +158,7 @@ if (telegramAlerter.isConfigured) {
 
     const sections = [
       `📋 *CRUCIX 简报*`,
-      `_${new Date().toISOString().replace('T', ' ').substring(0, 19)} UTC_`,
+      `_${new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', hour12: false }).replace(/\//g, '-')} CST_`,
       ``,
     ];
 
@@ -241,6 +241,7 @@ if (telegramAlerter.isConfigured) {
   });
 
   telegramAlerter.onCommand('/portfolio', async () => {
+    console.log('[Crucix] /portfolio command received');
     try {
       const { stdout } = await new Promise((resolve, reject) => {
         exec('python scripts/qmt_positions.py', { cwd: ROOT, timeout: 30000 }, (err, stdout, stderr) => {
@@ -248,6 +249,7 @@ if (telegramAlerter.isConfigured) {
           else resolve({ stdout, stderr });
         });
       });
+      console.log('[Crucix] /portfolio QMT output:', stdout.substring(0, 200));
 
       const data = JSON.parse(stdout);
 
@@ -282,6 +284,7 @@ if (telegramAlerter.isConfigured) {
 
       return lines.join('\n');
     } catch (err) {
+      console.error('[Crucix] /portfolio error:', err.message);
       return `❌ 持仓查询失败: ${err.message}\n请确认QMT客户端已运行且已登录。`;
     }
   });
@@ -335,7 +338,7 @@ if (discordAlerter.isConfigured) {
     const delta = memory.getLastDelta();
     const ideas = (currentData.ideas || []).slice(0, 3);
 
-    const sections = [`**📋 CRUCIX 简报**\n_${new Date().toISOString().replace('T', ' ').substring(0, 19)} UTC_\n`];
+    const sections = [`**📋 CRUCIX 简报**\n_${new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', hour12: false }).replace(/\//g, '-')} CST_\n`];
 
     if (delta?.summary) {
       const dirEmoji = { 'risk-off': '📉', 'risk-on': '📈', 'mixed': '↔️' }[delta.summary.direction] || '↔️';

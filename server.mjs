@@ -241,7 +241,49 @@ if (telegramAlerter.isConfigured) {
   });
 
   telegramAlerter.onCommand('/portfolio', async () => {
-    return '📊 投资组合需要 Alpaca MCP 连接。\n使用 Crucix 仪表盘或 Claude agent 查询投资组合。';
+    try {
+      const { stdout } = await new Promise((resolve, reject) => {
+        exec('python scripts/qmt_positions.py', { cwd: ROOT, timeout: 30000 }, (err, stdout, stderr) => {
+          if (err) reject(err);
+          else resolve({ stdout, stderr });
+        });
+      });
+
+      const data = JSON.parse(stdout);
+
+      if (data.error) {
+        return `❌ ${data.error}`;
+      }
+
+      const lines = [
+        `📊 *QMT 投资组合*`,
+        ``,
+        `💰 资产总额: ¥${(data.total_asset || 0).toFixed(2)}`,
+        `📈 持仓市值: ¥${(data.market_value || 0).toFixed(2)}`,
+        `💵 可用资金: ¥${(data.cash || 0).toFixed(2)}`,
+        `⏳ 在途资金: ¥${(data.frozen_cash || 0).toFixed(2)}`,
+        ``,
+      ];
+
+      if (data.positions && data.positions.length > 0) {
+        lines.push(`📋 *持仓（${data.positions.length}只）*`);
+        for (const pos of data.positions.slice(0, 10)) {
+          const code = pos.stock_code.replace('.SH', '').replace('.SZ', '');
+          const pnl = (pos.market_value - pos.open_price * pos.volume).toFixed(0);
+          const pnlEmoji = pnl >= 0 ? '📈' : '📉';
+          lines.push(`${pnlEmoji} ${code} | ${pos.volume}股 | 成本:${pos.open_price.toFixed(2)} | 现值:¥${(pos.market_value || 0).toFixed(0)}`);
+        }
+        if (data.positions.length > 10) {
+          lines.push(`...等共${data.positions.length}只`);
+        }
+      } else {
+        lines.push(`📋 暂无持仓`);
+      }
+
+      return lines.join('\n');
+    } catch (err) {
+      return `❌ 持仓查询失败: ${err.message}\n请确认QMT客户端已运行且已登录。`;
+    }
   });
 
   // Start polling for bot commands
@@ -329,7 +371,49 @@ if (discordAlerter.isConfigured) {
   });
 
   discordAlerter.onCommand('portfolio', async () => {
-    return '📊 投资组合需要 Alpaca MCP 连接。\n使用 Crucix 仪表盘或 Claude agent 查询投资组合。';
+    try {
+      const { stdout } = await new Promise((resolve, reject) => {
+        exec('python scripts/qmt_positions.py', { cwd: ROOT, timeout: 30000 }, (err, stdout, stderr) => {
+          if (err) reject(err);
+          else resolve({ stdout, stderr });
+        });
+      });
+
+      const data = JSON.parse(stdout);
+
+      if (data.error) {
+        return `❌ ${data.error}`;
+      }
+
+      const lines = [
+        `📊 **QMT 投资组合**`,
+        ``,
+        `💰 资产总额: ¥${(data.total_asset || 0).toFixed(2)}`,
+        `📈 持仓市值: ¥${(data.market_value || 0).toFixed(2)}`,
+        `💵 可用资金: ¥${(data.cash || 0).toFixed(2)}`,
+        `⏳ 在途资金: ¥${(data.frozen_cash || 0).toFixed(2)}`,
+        ``,
+      ];
+
+      if (data.positions && data.positions.length > 0) {
+        lines.push(`📋 **持仓（${data.positions.length}只）**`);
+        for (const pos of data.positions.slice(0, 10)) {
+          const code = pos.stock_code.replace('.SH', '').replace('.SZ', '');
+          const pnl = (pos.market_value - pos.open_price * pos.volume).toFixed(0);
+          const pnlEmoji = pnl >= 0 ? '📈' : '📉';
+          lines.push(`${pnlEmoji} ${code} | ${pos.volume}股 | 成本:${pos.open_price.toFixed(2)} | 现值:¥${(pos.market_value || 0).toFixed(0)}`);
+        }
+        if (data.positions.length > 10) {
+          lines.push(`...等共${data.positions.length}只`);
+        }
+      } else {
+        lines.push(`📋 暂无持仓`);
+      }
+
+      return lines.join('\n');
+    } catch (err) {
+      return `❌ 持仓查询失败: ${err.message}\n请确认QMT客户端已运行且已登录。`;
+    }
   });
 
   // Start the Discord bot (non-blocking — connection happens async)

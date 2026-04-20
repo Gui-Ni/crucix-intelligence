@@ -14,9 +14,9 @@ except ImportError:
     print(json.dumps({"error": "xtquant模块未安装，请先 pip install xtquant"}))
     sys.exit(1)
 
-# QMT配置 — 请修改为你的实际路径和账号
-QMT_PATH = r'C:\Users\admin\Desktop\QMT量化工具'
-ACCOUNT = "8885494243"  # 替换为你的账号
+# QMT配置
+QMT_PATH = r'D:\国金证券QMT交易端\userdata_mini'
+ACCOUNT = "8885497243"
 
 def main():
     session_id = int(time.time())

@@ -154,6 +154,7 @@ if (telegramAlerter.isConfigured) {
     const metals = currentData.metals || {};
     const delta = memory.getLastDelta();
     const ideas = (currentData.ideas || []).slice(0, 3);
+    const newsFeed = currentData.newsFeed || [];
 
     const sections = [
       `📋 *CRUCIX 简报*`,
@@ -176,6 +177,17 @@ if (telegramAlerter.isConfigured) {
       sections.push(`📊 VIX: ${vix?.value || '--'} | WTI: $${energy.wti || '--'} | 布伦特: $${energy.brent || '--'}`);
       sections.push(`   黄金: $${metals.gold || '--'} | 白银: $${metals.silver || '--'}${hy ? ` | HY利差: ${hy.value}` : ''}`);
       sections.push(`   天然气: $${energy.natgas || '--'}`);
+      sections.push('');
+    }
+
+    // News ticker summary
+    if (newsFeed.length > 0) {
+      const topNews = newsFeed.slice(0, 5);
+      sections.push(`📰 *实时新闻滚动（${newsFeed.length}条）*`);
+      for (const n of topNews) {
+        const headline = (n.headline || '').substring(0, 60);
+        sections.push(`  [${n.source || '未知'}] ${headline}`);
+      }
       sections.push('');
     }
 

@@ -120,34 +120,34 @@ if (telegramAlerter.isConfigured) {
     const sourcesOk = currentData?.meta?.sourcesOk || 0;
     const sourcesTotal = currentData?.meta?.sourcesQueried || 0;
     const sourcesFailed = currentData?.meta?.sourcesFailed || 0;
-    const llmStatus = llmProvider?.isConfigured ? `✅ ${llmProvider.name}` : '❌ Disabled';
+    const llmStatus = llmProvider?.isConfigured ? `✅ ${llmProvider.name}` : '❌ 已关闭';
     const nextSweep = lastSweepTime
       ? new Date(new Date(lastSweepTime).getTime() + config.refreshIntervalMinutes * 60000).toLocaleTimeString()
-      : 'pending';
+      : '待定';
 
     return [
-      `🖥️ *CRUCIX STATUS*`,
+      `🖥️ *CRUCIX 状态*`,
       ``,
-      `Uptime: ${h}h ${m}m`,
-      `Last sweep: ${lastSweepTime ? new Date(lastSweepTime).toLocaleTimeString() + ' UTC' : 'never'}`,
-      `Next sweep: ${nextSweep} UTC`,
-      `Sweep in progress: ${sweepInProgress ? '🔄 Yes' : '⏸️ No'}`,
-      `Sources: ${sourcesOk}/${sourcesTotal} OK${sourcesFailed > 0 ? ` (${sourcesFailed} failed)` : ''}`,
+      `运行时间: ${h}小时${m}分钟`,
+      `上次扫描: ${lastSweepTime ? new Date(lastSweepTime).toLocaleTimeString() + ' UTC' : '从未'}`,
+      `下次扫描: ${nextSweep} UTC`,
+      `扫描进行中: ${sweepInProgress ? '🔄 是' : '⏸️ 否'}`,
+      `数据源: ${sourcesOk}/${sourcesTotal} 正常${sourcesFailed > 0 ? `（${sourcesFailed}个失败）` : ''}`,
       `LLM: ${llmStatus}`,
-      `SSE clients: ${sseClients.size}`,
-      `Dashboard: http://localhost:${config.port}`,
+      `SSE客户端: ${sseClients.size}`,
+      `仪表盘: http://localhost:${config.port}`,
     ].join('\n');
   });
 
   telegramAlerter.onCommand('/sweep', async () => {
-    if (sweepInProgress) return '🔄 Sweep already in progress. Please wait.';
+    if (sweepInProgress) return '🔄 扫描正在进行中，请稍候。';
     // Fire and forget — don't block the bot response
-    runSweepCycle().catch(err => console.error('[Crucix] Manual sweep failed:', err.message));
-    return '🚀 Manual sweep triggered. You\'ll receive alerts if anything significant is detected.';
+    runSweepCycle().catch(err => console.error('[Crucix] 手动扫描失败:', err.message));
+    return '🚀 手动扫描已触发。如果检测到重要信号，您将收到警报。';
   });
 
   telegramAlerter.onCommand('/brief', async () => {
-    if (!currentData) return '⏳ No data yet — waiting for first sweep to complete.';
+    if (!currentData) return '⏳ 暂无数据 — 等待首次扫描完成。';
 
     const tg = currentData.tg || {};
     const energy = currentData.energy || {};
@@ -156,7 +156,7 @@ if (telegramAlerter.isConfigured) {
     const ideas = (currentData.ideas || []).slice(0, 3);
 
     const sections = [
-      `📋 *CRUCIX BRIEF*`,
+      `📋 *CRUCIX 简报*`,
       `_${new Date().toISOString().replace('T', ' ').substring(0, 19)} UTC_`,
       ``,
     ];
@@ -164,7 +164,8 @@ if (telegramAlerter.isConfigured) {
     // Delta direction
     if (delta?.summary) {
       const dirEmoji = { 'risk-off': '📉', 'risk-on': '📈', 'mixed': '↔️' }[delta.summary.direction] || '↔️';
-      sections.push(`${dirEmoji} Direction: *${delta.summary.direction.toUpperCase()}* | ${delta.summary.totalChanges} changes, ${delta.summary.criticalChanges} critical`);
+      const dirLabel = { 'risk-off': '风险规避', 'risk-on': '风险偏好', 'mixed': '中性' }[delta.summary.direction] || delta.summary.direction.toUpperCase();
+      sections.push(`${dirEmoji} 方向: *${dirLabel}* | ${delta.summary.totalChanges}个变化，${delta.summary.criticalChanges}个严重`);
       sections.push('');
     }
 
@@ -172,15 +173,15 @@ if (telegramAlerter.isConfigured) {
     const vix = currentData.fred?.find(f => f.id === 'VIXCLS');
     const hy = currentData.fred?.find(f => f.id === 'BAMLH0A0HYM2');
     if (vix || energy.wti || metals.gold || metals.silver) {
-      sections.push(`📊 VIX: ${vix?.value || '--'} | WTI: $${energy.wti || '--'} | Brent: $${energy.brent || '--'}`);
-      sections.push(`   Gold: $${metals.gold || '--'} | Silver: $${metals.silver || '--'}${hy ? ` | HY Spread: ${hy.value}` : ''}`);
-      sections.push(`   NatGas: $${energy.natgas || '--'}`);
+      sections.push(`📊 VIX: ${vix?.value || '--'} | WTI: $${energy.wti || '--'} | 布伦特: $${energy.brent || '--'}`);
+      sections.push(`   黄金: $${metals.gold || '--'} | 白银: $${metals.silver || '--'}${hy ? ` | HY利差: ${hy.value}` : ''}`);
+      sections.push(`   天然气: $${energy.natgas || '--'}`);
       sections.push('');
     }
 
     // OSINT
     if (tg.urgent?.length > 0) {
-      sections.push(`📡 OSINT: ${tg.urgent.length} urgent signals, ${tg.posts || 0} total posts`);
+      sections.push(`📡 OSINT: ${tg.urgent.length}条紧急信号，${tg.posts || 0}条总帖子`);
       // Top 2 urgent
       for (const p of tg.urgent.slice(0, 2)) {
         sections.push(`  • ${(p.text || '').substring(0, 80)}`);
@@ -190,7 +191,7 @@ if (telegramAlerter.isConfigured) {
 
     // Top ideas
     if (ideas.length > 0) {
-      sections.push(`💡 *Top Ideas:*`);
+      sections.push(`💡 *重点思路:*`);
       for (const idea of ideas) {
         sections.push(`  ${idea.type === 'long' ? '📈' : idea.type === 'hedge' ? '🛡️' : '👁️'} ${idea.title}`);
       }
@@ -200,7 +201,7 @@ if (telegramAlerter.isConfigured) {
   });
 
   telegramAlerter.onCommand('/portfolio', async () => {
-    return '📊 Portfolio integration requires Alpaca MCP connection.\nUse the Crucix dashboard or Claude agent for portfolio queries.';
+    return '📊 投资组合需要 Alpaca MCP 连接。\n使用 Crucix 仪表盘或 Claude agent 查询投资组合。';
   });
 
   // Start polling for bot commands
@@ -219,32 +220,32 @@ if (discordAlerter.isConfigured) {
     const sourcesOk = currentData?.meta?.sourcesOk || 0;
     const sourcesTotal = currentData?.meta?.sourcesQueried || 0;
     const sourcesFailed = currentData?.meta?.sourcesFailed || 0;
-    const llmStatus = llmProvider?.isConfigured ? `✅ ${llmProvider.name}` : '❌ Disabled';
+    const llmStatus = llmProvider?.isConfigured ? `✅ ${llmProvider.name}` : '❌ 已关闭';
     const nextSweep = lastSweepTime
       ? new Date(new Date(lastSweepTime).getTime() + config.refreshIntervalMinutes * 60000).toLocaleTimeString()
-      : 'pending';
+      : '待定';
 
     return [
-      `**🖥️ CRUCIX STATUS**\n`,
-      `Uptime: ${h}h ${m}m`,
-      `Last sweep: ${lastSweepTime ? new Date(lastSweepTime).toLocaleTimeString() + ' UTC' : 'never'}`,
-      `Next sweep: ${nextSweep} UTC`,
-      `Sweep in progress: ${sweepInProgress ? '🔄 Yes' : '⏸️ No'}`,
-      `Sources: ${sourcesOk}/${sourcesTotal} OK${sourcesFailed > 0 ? ` (${sourcesFailed} failed)` : ''}`,
+      `**🖥️ CRUCIX 状态**\n`,
+      `运行时间: ${h}小时${m}分钟`,
+      `上次扫描: ${lastSweepTime ? new Date(lastSweepTime).toLocaleTimeString() + ' UTC' : '从未'}`,
+      `下次扫描: ${nextSweep} UTC`,
+      `扫描进行中: ${sweepInProgress ? '🔄 是' : '⏸️ 否'}`,
+      `数据源: ${sourcesOk}/${sourcesTotal} 正常${sourcesFailed > 0 ? `（${sourcesFailed}个失败）` : ''}`,
       `LLM: ${llmStatus}`,
-      `SSE clients: ${sseClients.size}`,
-      `Dashboard: http://localhost:${config.port}`,
+      `SSE客户端: ${sseClients.size}`,
+      `仪表盘: http://localhost:${config.port}`,
     ].join('\n');
   });
 
   discordAlerter.onCommand('sweep', async () => {
-    if (sweepInProgress) return '🔄 Sweep already in progress. Please wait.';
-    runSweepCycle().catch(err => console.error('[Crucix] Manual sweep failed:', err.message));
-    return '🚀 Manual sweep triggered. You\'ll receive alerts if anything significant is detected.';
+    if (sweepInProgress) return '🔄 扫描正在进行中，请稍候。';
+    runSweepCycle().catch(err => console.error('[Crucix] 手动扫描失败:', err.message));
+    return '🚀 手动扫描已触发。如果检测到重要信号，您将收到警报。';
   });
 
   discordAlerter.onCommand('brief', async () => {
-    if (!currentData) return '⏳ No data yet — waiting for first sweep to complete.';
+    if (!currentData) return '⏳ 暂无数据 — 等待首次扫描完成。';
 
     const tg = currentData.tg || {};
     const energy = currentData.energy || {};
@@ -252,24 +253,25 @@ if (discordAlerter.isConfigured) {
     const delta = memory.getLastDelta();
     const ideas = (currentData.ideas || []).slice(0, 3);
 
-    const sections = [`**📋 CRUCIX BRIEF**\n_${new Date().toISOString().replace('T', ' ').substring(0, 19)} UTC_\n`];
+    const sections = [`**📋 CRUCIX 简报**\n_${new Date().toISOString().replace('T', ' ').substring(0, 19)} UTC_\n`];
 
     if (delta?.summary) {
       const dirEmoji = { 'risk-off': '📉', 'risk-on': '📈', 'mixed': '↔️' }[delta.summary.direction] || '↔️';
-      sections.push(`${dirEmoji} Direction: **${delta.summary.direction.toUpperCase()}** | ${delta.summary.totalChanges} changes, ${delta.summary.criticalChanges} critical\n`);
+      const dirLabel = { 'risk-off': '风险规避', 'risk-on': '风险偏好', 'mixed': '中性' }[delta.summary.direction] || delta.summary.direction.toUpperCase();
+      sections.push(`${dirEmoji} 方向: **${dirLabel}** | ${delta.summary.totalChanges}个变化，${delta.summary.criticalChanges}个严重\n`);
     }
 
     const vix = currentData.fred?.find(f => f.id === 'VIXCLS');
     const hy = currentData.fred?.find(f => f.id === 'BAMLH0A0HYM2');
     if (vix || energy.wti || metals.gold || metals.silver) {
-      sections.push(`📊 VIX: ${vix?.value || '--'} | WTI: $${energy.wti || '--'} | Brent: $${energy.brent || '--'}`);
-      sections.push(`   Gold: $${metals.gold || '--'} | Silver: $${metals.silver || '--'}${hy ? ` | HY Spread: ${hy.value}` : ''}`);
-      sections.push(`   NatGas: $${energy.natgas || '--'}`);
+      sections.push(`📊 VIX: ${vix?.value || '--'} | WTI: $${energy.wti || '--'} | 布伦特: $${energy.brent || '--'}`);
+      sections.push(`   黄金: $${metals.gold || '--'} | 白银: $${metals.silver || '--'}${hy ? ` | HY利差: ${hy.value}` : ''}`);
+      sections.push(`   天然气: $${energy.natgas || '--'}`);
       sections.push('');
     }
 
     if (tg.urgent?.length > 0) {
-      sections.push(`📡 OSINT: ${tg.urgent.length} urgent signals, ${tg.posts || 0} total posts`);
+      sections.push(`📡 OSINT: ${tg.urgent.length}条紧急信号，${tg.posts || 0}条总帖子`);
       for (const p of tg.urgent.slice(0, 2)) {
         sections.push(`  • ${(p.text || '').substring(0, 80)}`);
       }
@@ -277,7 +279,7 @@ if (discordAlerter.isConfigured) {
     }
 
     if (ideas.length > 0) {
-      sections.push(`**💡 Top Ideas:**`);
+      sections.push(`**💡 重点思路:**`);
       for (const idea of ideas) {
         sections.push(`  ${idea.type === 'long' ? '📈' : idea.type === 'hedge' ? '🛡️' : '👁️'} ${idea.title}`);
       }
@@ -287,7 +289,7 @@ if (discordAlerter.isConfigured) {
   });
 
   discordAlerter.onCommand('portfolio', async () => {
-    return '📊 Portfolio integration requires Alpaca MCP connection.\nUse the Crucix dashboard or Claude agent for portfolio queries.';
+    return '📊 投资组合需要 Alpaca MCP 连接。\n使用 Crucix 仪表盘或 Claude agent 查询投资组合。';
   });
 
   // Start the Discord bot (non-blocking — connection happens async)

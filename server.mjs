@@ -244,7 +244,8 @@ if (telegramAlerter.isConfigured) {
     console.log('[Crucix] /portfolio command received');
     try {
       const { stdout } = await new Promise((resolve, reject) => {
-        exec('python scripts/qmt_positions.py', { cwd: ROOT, timeout: 15000 }, (err, stdout, stderr) => {
+        const pythonPath = 'D:\\Program Files\\Pyhton3.11.9\\python.exe';
+        exec(`"${pythonPath}" scripts/qmt_positions.py`, { cwd: ROOT, timeout: 15000 }, (err, stdout, stderr) => {
           if (err) reject(err);
           else resolve({ stdout, stderr });
         });
